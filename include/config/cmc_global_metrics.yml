@@ -1,0 +1,63 @@
+cmc_global_metrics:
+  api:
+    url: "https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/historical"
+    api_key_var: "cmc_api_key"
+    timeout: 30
+    interval: "1d"
+    count: 360
+
+  db:
+    postgres_conn_id: "vn_portfolio_db"
+    target_table: "raw_crypto_data.crypto_global_metrics"
+    conflict_keys:
+      - "timestamp"
+    truncate_before_load: false
+
+    columns:
+      - json_key: "timestamp"
+        column: "timestamp"
+        source_path: ["timestamp"]
+      - json_key: "btc_dominance"
+        column: "btc_dominance"
+        source_path: ["btc_dominance"]
+        value_type: "float"
+      - json_key: "eth_dominance"
+        column: "eth_dominance"
+        source_path: ["eth_dominance"]
+        value_type: "float"
+      - json_key: "active_cryptocurrencies"
+        column: "active_cryptocurrencies"
+        source_path: ["active_cryptocurrencies"]
+      - json_key: "active_exchanges"
+        column: "active_exchanges"
+        source_path: ["active_exchanges"]
+      - json_key: "active_market_pairs"
+        column: "active_market_pairs"
+        source_path: ["active_market_pairs"]
+      - json_key: "total_market_cap"
+        column: "total_market_cap"
+        source_path: ["quote", "USD", "total_market_cap"]
+        value_type: "float"
+      - json_key: "total_volume_24h"
+        column: "total_volume_24h"
+        source_path: ["quote", "USD", "total_volume_24h"]
+        value_type: "float"
+      - json_key: "total_volume_24h_reported"
+        column: "total_volume_24h_reported"
+        source_path: ["quote", "USD", "total_volume_24h_reported"]
+        value_type: "float"
+      - json_key: "altcoin_market_cap"
+        column: "altcoin_market_cap"
+        source_path: ["quote", "USD", "altcoin_market_cap"]
+        value_type: "float"
+      - json_key: "altcoin_volume_24h"
+        column: "altcoin_volume_24h"
+        source_path: ["quote", "USD", "altcoin_volume_24h"]
+        value_type: "float"
+      - json_key: "altcoin_volume_24h_reported"
+        column: "altcoin_volume_24h_reported"
+        source_path: ["quote", "USD", "altcoin_volume_24h_reported"]
+        value_type: "float"
+      - json_key: "quote_timestamp"
+        column: "quote_timestamp"
+        source_path: ["quote", "USD", "timestamp"]

@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from airflow import DAG
 from airflow.decorators import task
 from airflow.operators.python import get_current_context
+from airflow.models import Variable
 
 from vn_stock_data.api_utils import request_json
 from vn_stock_data.config_loader import load_yaml_config
@@ -18,6 +19,7 @@ CONFIG = load_yaml_config("eod_prices.yml")["eod_prices"]
 API_CFG = CONFIG["api"]
 DB_CFG = CONFIG["db"]
 CHUNK_SIZE = 400  # giữ số batch < core.max_map_length
+API_KEY = Variable.get(API_CFG["api_key_var"], default_var="")
 
 
 def _build_date_range(execution_date: datetime) -> Dict[str, str]:
@@ -40,10 +42,11 @@ def _sync_one(code: str, logical_date: datetime) -> None:
     date_range = _build_date_range(logical_date)
 
     params = {
-        "apikey": API_CFG["api_key"],
         "code": code,
         **date_range,
     }
+    if API_KEY:
+        params["apikey"] = API_KEY
 
     payload = request_json(
         API_CFG["url"],

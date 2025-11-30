@@ -1,7 +1,7 @@
 eod_prices:
   api:
     url: "https://wifeed.vn/api/du-lieu-gia-eod/full"
-    api_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODg0LCJlbWFpbCI6InZkdC52b0BsaXZlLmNvbSIsIm5hbWUiOiJWw7UgxJDDrG5oIFRyw60iLCJwaG9uZSI6Iis4NDAwMDExMTAwMCIsImNvbXBhbnkiOiJBbGdvIFRyYWRpbmciLCJyb2xlIjoidXNlciIsImlhdCI6MTcyODI3OTcxMH0.VfrAZ219HKlSImtbZey0Yw9I8CRY-HzAGAUrrmIHzvY"
+    api_key_var: "eod_prices_api_key"
     timeout: 30
     lookback_days: 50
 
