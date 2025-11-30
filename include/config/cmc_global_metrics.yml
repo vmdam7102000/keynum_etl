@@ -4,7 +4,7 @@ cmc_global_metrics:
     api_key_var: "cmc_api_key"
     timeout: 30
     interval: "1d"
-    count: 360
+    count: 2
 
   db:
     postgres_conn_id: "keynum-central-pg"
