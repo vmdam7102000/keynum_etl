@@ -10,6 +10,7 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.operators.python import get_current_context
 from airflow.models import Variable
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from vn_stock_data.api_utils import request_json
 from vn_stock_data.config_loader import load_yaml_config
@@ -35,7 +36,7 @@ def _build_date_range(execution_date: datetime) -> Dict[str, str]:
     }
 
 
-def _sync_one(code: str, logical_date: datetime) -> None:
+def _sync_one(code: str, logical_date: datetime, conn) -> None:
     """
     Fetch & insert EOD cho 1 mã trong khoảng lookback_days ngày.
     """
@@ -72,7 +73,8 @@ def _sync_one(code: str, logical_date: datetime) -> None:
         records=records,
         columns_map=DB_CFG["columns"],
         conflict_keys=DB_CFG["conflict_keys"],
-        on_conflict_do_update=False,  # EOD: trùng (mack, ngay) thì bỏ qua
+        on_conflict_do_update=False,
+        conn=conn,
     )
 
     logging.info(
@@ -120,8 +122,13 @@ with DAG(
     def sync_code_batch(codes: List[str]) -> None:
         context = get_current_context()
         logical_date = context["logical_date"]
-        for code in codes:
-            _sync_one(code, logical_date)
+        hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
+        conn = hook.get_conn()
+        try:
+            for code in codes:
+                _sync_one(code, logical_date, conn)
+        finally:
+            conn.close()
 
     codes = get_codes()
     code_batches = chunk_codes(codes)

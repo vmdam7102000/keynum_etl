@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from vn_stock_data.api_utils import request_json
 from vn_stock_data.config_loader import load_yaml_config
@@ -103,21 +104,27 @@ with DAG(
 
     @task
     def sync_code_batch(codes: List[str]) -> None:
-        for code in codes:
-            record = _fetch_basic_info(code)
-            if not record:
-                continue
+        hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
+        conn = hook.get_conn()
+        try:
+            for code in codes:
+                record = _fetch_basic_info(code)
+                if not record:
+                    continue
 
-            insert_dynamic_records(
-                postgres_conn_id=DB_CFG["postgres_conn_id"],
-                table=DB_CFG["target_table"],
-                records=[record],
-                columns_map=DB_CFG["columns"],
-                conflict_keys=DB_CFG["conflict_keys"],
-                on_conflict_do_update=True,
-            )
+                insert_dynamic_records(
+                    postgres_conn_id=DB_CFG["postgres_conn_id"],
+                    table=DB_CFG["target_table"],
+                    records=[record],
+                    columns_map=DB_CFG["columns"],
+                    conflict_keys=DB_CFG["conflict_keys"],
+                    on_conflict_do_update=True,
+                    conn=conn,
+                )
 
-            time.sleep(API_CFG.get("throttle_seconds", 1))
+                time.sleep(API_CFG.get("throttle_seconds", 1))
+        finally:
+            conn.close()
 
     codes = get_codes()
     code_batches = chunk_codes(codes)

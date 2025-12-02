@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from airflow import DAG
 from airflow.decorators import task
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from vn_stock_data.api_utils import request_json
 from vn_stock_data.config_loader import load_yaml_config
@@ -62,15 +63,21 @@ with DAG(
 
     @task
     def upsert_stock_list(records: List[Dict[str, Any]]) -> None:
-        insert_dynamic_records(
-            postgres_conn_id=DB_CFG["postgres_conn_id"],
-            table=DB_CFG["table"],
-            records=records,
-            columns_map=DB_CFG["columns"],
-            conflict_keys=DB_CFG["conflict_keys"],
-            on_conflict_do_update=True,  # stock list muốn update thông tin mới
-        )
-        logging.info("Upserted %s stock rows into %s", len(records), DB_CFG["table"])
+        hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
+        conn = hook.get_conn()
+        try:
+            insert_dynamic_records(
+                postgres_conn_id=DB_CFG["postgres_conn_id"],
+                table=DB_CFG["table"],
+                records=records,
+                columns_map=DB_CFG["columns"],
+                conflict_keys=DB_CFG["conflict_keys"],
+                on_conflict_do_update=True,
+                conn=conn,
+            )
+            logging.info("Upserted %s stock rows into %s", len(records), DB_CFG["table"])
+        finally:
+            conn.close()
 
     data = fetch_stock_list()
     upsert_stock_list(data)

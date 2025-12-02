@@ -1,7 +1,9 @@
 # vn_stock_data/db_utils.py
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from psycopg2.extensions import connection as PGConnection
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -32,6 +34,7 @@ def insert_dynamic_records(
     columns_map: List[Dict[str, str]],
     conflict_keys: List[str],
     on_conflict_do_update: bool = False,
+    conn: Optional[PGConnection] = None,
 ) -> None:
     """
     Insert records vào Postgres theo mapping JSON->column trong YAML.
@@ -65,8 +68,12 @@ def insert_dynamic_records(
         {conflict_part}
     """
 
-    hook = PostgresHook(postgres_conn_id=postgres_conn_id)
-    conn = hook.get_conn()
+    managed_conn = False
+    if conn is None:
+        hook = PostgresHook(postgres_conn_id=postgres_conn_id)
+        conn = hook.get_conn()
+        managed_conn = True
+
     cursor = conn.cursor()
     try:
         for rec in records:
@@ -75,4 +82,5 @@ def insert_dynamic_records(
         conn.commit()
     finally:
         cursor.close()
-        conn.close()
+        if managed_conn:
+            conn.close()

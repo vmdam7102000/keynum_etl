@@ -140,23 +140,30 @@ with DAG(
 
     @task
     def load(records: List[Dict[str, Any]]) -> None:
-        if DB_CFG.get("truncate_before_load"):
-            hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
-            hook.run(f"TRUNCATE TABLE {DB_CFG['target_table']}")
+        hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
+        conn = hook.get_conn()
+        try:
+            if DB_CFG.get("truncate_before_load"):
+                with conn.cursor() as cursor:
+                    cursor.execute(f"TRUNCATE TABLE {DB_CFG['target_table']}")
+                conn.commit()
 
-        if not records:
-            logging.warning("No global metric records to load")
-            return
+            if not records:
+                logging.warning("No global metric records to load")
+                return
 
-        insert_dynamic_records(
-            postgres_conn_id=DB_CFG["postgres_conn_id"],
-            table=DB_CFG["target_table"],
-            records=records,
-            columns_map=DB_CFG["columns"],
-            conflict_keys=DB_CFG["conflict_keys"],
-            on_conflict_do_update=True,
-        )
+            insert_dynamic_records(
+                postgres_conn_id=DB_CFG["postgres_conn_id"],
+                table=DB_CFG["target_table"],
+                records=records,
+                columns_map=DB_CFG["columns"],
+                conflict_keys=DB_CFG["conflict_keys"],
+                on_conflict_do_update=True,
+                conn=conn,
+            )
 
-        logging.info("Loaded %s rows into %s", len(records), DB_CFG["target_table"])
+            logging.info("Loaded %s rows into %s", len(records), DB_CFG["target_table"])
+        finally:
+            conn.close()
 
     load(transform(extract()))
