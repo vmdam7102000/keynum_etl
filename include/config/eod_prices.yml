@@ -3,7 +3,7 @@ eod_prices:
     url: "https://wifeed.vn/api/du-lieu-gia-eod/full"
     api_key_var: "wifeed_api_key"
     timeout: 30
-    lookback_days: 7305
+    lookback_days: 3
 
   db:
     postgres_conn_id: "keynum-central-pg"
