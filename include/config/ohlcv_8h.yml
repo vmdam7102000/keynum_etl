@@ -8,4 +8,4 @@ ohlcv_8h:
     lookback_days: 30
     batch_days: 30
     bucket_minutes: 480
-  schedule: "15 */8 * * *"
+  schedule: "1 0-23/8 * * *"

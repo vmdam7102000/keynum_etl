@@ -186,7 +186,7 @@ with DAG(
         "retries": 2,
         "retry_delay": timedelta(minutes=5),
     },
-    schedule_interval="15 5 * * *",  # daily 05:15
+    schedule_interval="*/3 * * * *",  # every 3 minutes
     start_date=datetime(2024, 1, 1),
     catchup=False,
     concurrency=PAIR_TASK_CONCURRENCY,
