@@ -446,7 +446,7 @@ with DAG(
         "retries": 2,
         "retry_delay": timedelta(minutes=5),
     },
-    schedule_interval="15 * * * *",
+    schedule_interval="15 5 * * *",
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
