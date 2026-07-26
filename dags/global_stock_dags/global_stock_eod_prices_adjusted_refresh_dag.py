@@ -1,4 +1,3 @@
-# dags/global_stock/sync_global_eod_prices_dag.py
 from __future__ import annotations
 
 import logging
@@ -16,26 +15,27 @@ from plugins.utils.eod_price_sync import sync_global_eod_one
 
 CONFIG = load_yaml_config("global_stock_configs/global_eod_prices.yml")["global_eod_prices"]
 API_CFG = CONFIG["api"]
+REFRESH_CFG = CONFIG["adjusted_refresh"]
 DB_CFG = CONFIG["db"]
-CHUNK_SIZE = 400  # keep number of batches under core.max_map_length
+CHUNK_SIZE = 400
 API_KEY = Variable.get(API_CFG["api_key_var"], default_var="")
 ADJUSTED_UPDATE_COLUMNS = ("adjusted_close",)
 
 
 with DAG(
-    dag_id="sync_global_eod_stock_prices_dag",
-    description="Sync global EOD stock prices from EODHD API to Postgres",
+    dag_id="refresh_global_eod_stock_adjusted_prices_weekly_dag",
+    description="Weekly full refresh of global-stock adjusted close prices from EODHD",
     default_args={
         "owner": "global-stock-data",
         "depends_on_past": False,
         "retries": 2,
         "retry_delay": timedelta(minutes=5),
     },
-    schedule_interval="0 3 * * *",  # daily at 03:00
+    schedule_interval=REFRESH_CFG["schedule_interval"],
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
-    tags=["stock", "global", "eod", "eodhd"],
+    tags=["stock", "global", "eod", "eodhd", "adjusted-refresh"],
 ) as dag:
 
     @task
@@ -46,9 +46,7 @@ with DAG(
         id_col = DB_CFG.get("company_id_column", "id")
         ticker_col = DB_CFG.get("company_ticker_column", "ticker")
         table = DB_CFG["company_table"]
-        where_clause = ""
-        if DB_CFG.get("only_active", True):
-            where_clause = " WHERE is_active = TRUE"
+        where_clause = " WHERE is_active = TRUE" if DB_CFG.get("only_active", True) else ""
         try:
             cursor.execute(f"SELECT {id_col}, {ticker_col} FROM {table}{where_clause}")
             companies = [
@@ -62,12 +60,11 @@ with DAG(
 
     @task
     def chunk_companies(companies: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
-        return [companies[i : i + CHUNK_SIZE] for i in range(0, len(companies), CHUNK_SIZE)]
+        return [companies[index : index + CHUNK_SIZE] for index in range(0, len(companies), CHUNK_SIZE)]
 
     @task
-    def sync_company_batch(companies: List[Dict[str, Any]]) -> None:
-        context = get_current_context()
-        logical_date = context["logical_date"]
+    def refresh_company_batch(companies: List[Dict[str, Any]]) -> None:
+        logical_date = get_current_context()["logical_date"]
         hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
         conn = hook.get_conn()
         try:
@@ -80,7 +77,7 @@ with DAG(
                     ticker=ticker,
                     company_id=company_id,
                     logical_date=logical_date,
-                    lookback_days=API_CFG.get("lookback_days", 30),
+                    lookback_days=REFRESH_CFG["lookback_days"],
                     api_cfg=API_CFG,
                     db_cfg=DB_CFG,
                     api_key=API_KEY,
@@ -92,4 +89,4 @@ with DAG(
 
     companies = get_companies()
     company_batches = chunk_companies(companies)
-    sync_company_batch.expand(companies=company_batches)
+    refresh_company_batch.expand(companies=company_batches)

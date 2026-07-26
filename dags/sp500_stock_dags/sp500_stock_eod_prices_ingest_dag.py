@@ -102,7 +102,8 @@ def _sync_one(ticker: str, company_id: int, logical_date: datetime, conn) -> Non
         records=enriched,
         columns_map=DB_CFG["columns"],
         conflict_keys=DB_CFG["conflict_keys"],
-        on_conflict_do_update=False,
+        on_conflict_do_update=True,
+        update_columns=["adjusted_close"],
         conn=conn,
     )
 

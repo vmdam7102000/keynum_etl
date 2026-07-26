@@ -1,14 +1,13 @@
-# dags/stock/sync_eod_prices_dag.py
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import List
 
 from airflow import DAG
 from airflow.decorators import task
-from airflow.operators.python import get_current_context
 from airflow.models import Variable
+from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from plugins.utils.config_loader import load_yaml_config
@@ -17,8 +16,9 @@ from plugins.utils.eod_price_sync import sync_vn_eod_one
 
 CONFIG = load_yaml_config("vn_stock_configs/eod_prices.yml")["eod_prices"]
 API_CFG = CONFIG["api"]
+REFRESH_CFG = CONFIG["adjusted_refresh"]
 DB_CFG = CONFIG["db"]
-CHUNK_SIZE = 400  # keep number of batches under core.max_map_length
+CHUNK_SIZE = 400
 API_KEY = Variable.get(API_CFG["api_key_var"], default_var="")
 ADJUSTED_UPDATE_COLUMNS = (
     "open_adjust",
@@ -30,19 +30,19 @@ ADJUSTED_UPDATE_COLUMNS = (
 
 
 with DAG(
-    dag_id="sync_eod_vn_stock_prices_dag",
-    description="Sync EOD stock prices from Wifeed API to Postgres (YAML mapping)",
+    dag_id="refresh_vn_stock_adjusted_prices_weekly_dag",
+    description="Weekly full refresh of Vietnam-stock adjusted EOD prices from Wifeed",
     default_args={
         "owner": "vn-stock-data",
         "depends_on_past": False,
         "retries": 2,
         "retry_delay": timedelta(minutes=5),
     },
-    schedule_interval="0 3 * * *",  # daily at 02:00
+    schedule_interval=REFRESH_CFG["schedule_interval"],
     start_date=datetime(2024, 1, 1),
     catchup=False,
     max_active_runs=1,
-    tags=["stock", "wifeed", "eod"],
+    tags=["stock", "wifeed", "eod", "adjusted-refresh"],
 ) as dag:
 
     @task
@@ -57,12 +57,11 @@ with DAG(
 
     @task
     def chunk_codes(codes: List[str]) -> List[List[str]]:
-        return [codes[i : i + CHUNK_SIZE] for i in range(0, len(codes), CHUNK_SIZE)]
+        return [codes[index : index + CHUNK_SIZE] for index in range(0, len(codes), CHUNK_SIZE)]
 
     @task
-    def sync_code_batch(codes: List[str]) -> None:
-        context = get_current_context()
-        logical_date = context["logical_date"]
+    def refresh_code_batch(codes: List[str]) -> None:
+        logical_date = get_current_context()["logical_date"]
         hook = PostgresHook(postgres_conn_id=DB_CFG["postgres_conn_id"])
         conn = hook.get_conn()
         try:
@@ -70,7 +69,7 @@ with DAG(
                 sync_vn_eod_one(
                     code=code,
                     logical_date=logical_date,
-                    lookback_days=API_CFG.get("lookback_days", 50),
+                    lookback_days=REFRESH_CFG["lookback_days"],
                     api_cfg=API_CFG,
                     db_cfg=DB_CFG,
                     api_key=API_KEY,
@@ -82,4 +81,4 @@ with DAG(
 
     codes = get_codes()
     code_batches = chunk_codes(codes)
-    sync_code_batch.expand(codes=code_batches)
+    refresh_code_batch.expand(codes=code_batches)

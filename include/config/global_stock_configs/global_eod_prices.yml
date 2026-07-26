@@ -9,6 +9,10 @@ global_eod_prices:
     fmt: "json"
     throttle_seconds: 1
 
+  adjusted_refresh:
+    schedule_interval: "30 3 * * 0"
+    lookback_days: 10000
+
   db:
     postgres_conn_id: "keynum-central-pg"
     company_table: "raw_global_stock_data.companies"

@@ -5,6 +5,10 @@ eod_prices:
     timeout: 30
     lookback_days: 3
 
+  adjusted_refresh:
+    schedule_interval: "30 3 * * 0"
+    lookback_days: 10000
+
   db:
     postgres_conn_id: "keynum-central-pg"
     stock_list_table: "raw_vn_stock_data.stock_list"

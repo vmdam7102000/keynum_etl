@@ -1,11 +1,10 @@
 # plugins/utils/db_utils.py
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 
-from psycopg2.extensions import connection as PGConnection
-
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+if TYPE_CHECKING:
+    from psycopg2.extensions import connection as PGConnection
 
 
 def get_all_stock_codes(
@@ -16,6 +15,8 @@ def get_all_stock_codes(
     """
     Fetch all stock codes from the configured stock list table.
     """
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
     conn = hook.get_conn()
     cursor = conn.cursor()
@@ -34,6 +35,7 @@ def insert_dynamic_records(
     columns_map: Sequence[Dict[str, str]],
     conflict_keys: Sequence[str],
     on_conflict_do_update: bool = False,
+    update_columns: Optional[Sequence[str]] = None,
     conn: Optional[PGConnection] = None,
 ) -> None:
     """
@@ -50,7 +52,23 @@ def insert_dynamic_records(
     conflict_sql = ", ".join(conflict_keys)
 
     if on_conflict_do_update:
-        set_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in db_columns])
+        if update_columns is None:
+            columns_to_update = db_columns
+        else:
+            columns_to_update = list(update_columns)
+            if not columns_to_update:
+                raise ValueError("update_columns must not be empty when updating conflicts")
+            if len(columns_to_update) != len(set(columns_to_update)):
+                raise ValueError("update_columns must not contain duplicate columns")
+            unknown_columns = set(columns_to_update) - set(db_columns)
+            if unknown_columns:
+                raise ValueError(
+                    "update_columns must be present in columns_map: "
+                    + ", ".join(sorted(unknown_columns))
+                )
+        set_clause = ", ".join(
+            [f"{col} = EXCLUDED.{col}" for col in columns_to_update]
+        )
         conflict_part = f"ON CONFLICT ({conflict_sql}) DO UPDATE SET {set_clause}"
     else:
         conflict_part = f"ON CONFLICT ({conflict_sql}) DO NOTHING"
@@ -63,6 +81,8 @@ def insert_dynamic_records(
 
     managed_conn = False
     if conn is None:
+        from airflow.providers.postgres.hooks.postgres import PostgresHook
+
         hook = PostgresHook(postgres_conn_id=postgres_conn_id)
         conn = hook.get_conn()
         managed_conn = True
