@@ -1,0 +1,15 @@
+sync_crypto_venue_market_rules_dag:
+  api:
+    quote: "USDT"
+    fallback_quote: "USDC"
+    market_symbol_overrides: {}
+    timeout_ms: 60000
+    pool_name: "ccxt_ohlcv_pool"
+    task_concurrency: 5
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    metadata_table: "raw_crypto_data.coin_marketcap_top100_info"
+    target_table: "raw_crypto_data.venue_market_rule_snapshot"
+
+  schedule_interval: "20 0 * * *"

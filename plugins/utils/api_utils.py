@@ -6,6 +6,7 @@ Centralizes retry/backoff logic so DAGs & operators reuse a single entry point.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -14,6 +15,25 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 import requests
 
 JsonType = Union[Dict[str, Any], List[Any]]
+_SENSITIVE_PARAM_NAMES = {"apikey", "api_key", "api_token", "access_token", "token"}
+_SENSITIVE_QUERY_VALUE = re.compile(
+    r"(?i)(apikey|api_key|api_token|access_token|token)=([^&\s]+)"
+)
+
+
+def _redact_sensitive_params(params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Return request parameters that are safe to include in application logs."""
+    if params is None:
+        return None
+    return {
+        key: "***" if key.lower() in _SENSITIVE_PARAM_NAMES else value
+        for key, value in params.items()
+    }
+
+
+def _redact_sensitive_text(value: Any) -> str:
+    """Redact credentials embedded in a URL or an exception message."""
+    return _SENSITIVE_QUERY_VALUE.sub(r"\1=***", str(value))
 
 
 def request_json(
@@ -37,6 +57,8 @@ def request_json(
     """
     http = session or requests.Session()
     last_exc: Exception | None = None
+    safe_params = _redact_sensitive_params(params)
+    safe_url = _redact_sensitive_text(url)
 
     for attempt in range(1, retries + 1):
         try:
@@ -53,15 +75,15 @@ def request_json(
         except requests.HTTPError as exc:
             last_exc = exc
             resp = exc.response
-            status_code = resp.status_code if resp else None
+            status_code = resp.status_code if resp is not None else None
 
             if fatal_statuses and status_code in fatal_statuses:
                 logging.error(
                     "Fatal API response (%s): %s %s params=%s",
                     status_code,
                     method,
-                    url,
-                    params,
+                    safe_url,
+                    safe_params,
                 )
                 raise
 
@@ -69,7 +91,7 @@ def request_json(
             retry_on = set(retry_statuses or ())
             if status_code == 429 or status_code in retry_on:
                 retry_after = _parse_retry_after(
-                    resp.headers.get("Retry-After") if resp else None
+                    resp.headers.get("Retry-After") if resp is not None else None
                 )
 
             logging.warning(
@@ -77,9 +99,9 @@ def request_json(
                 attempt,
                 retries,
                 method,
-                url,
-                params,
-                exc,
+                safe_url,
+                safe_params,
+                _redact_sensitive_text(exc),
             )
             if attempt < retries:
                 sleep_time = backoff ** (attempt - 1)
@@ -93,15 +115,20 @@ def request_json(
                 attempt,
                 retries,
                 method,
-                url,
-                params,
-                exc,
+                safe_url,
+                safe_params,
+                _redact_sensitive_text(exc),
             )
             if attempt < retries:
                 sleep_time = backoff ** (attempt - 1)
                 time.sleep(sleep_time)
 
     if last_exc:
-        logging.error("All retries failed for %s %s: %s", method, url, last_exc)
+        logging.error(
+            "All retries failed for %s %s: %s",
+            method,
+            safe_url,
+            _redact_sensitive_text(last_exc),
+        )
 
     return None

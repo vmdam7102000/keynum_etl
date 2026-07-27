@@ -1,0 +1,18 @@
+market_index:
+  api:
+    url: "https://wifeed.vn/api/du-lieu-gia-eod/full"
+    api_key_var: "wifeed_api_key"
+    timeout: 30
+    throttle_seconds: 0.5
+    lookback_days: 7
+    history_start_date: "1999-01-01"
+    backfill_batch_days: 365
+    codes:
+      VNINDEX: "vn_index"
+      UPCOM: "upcom_index"
+      VN30: "vn30_index"
+      HNX30: "hnx30_index"
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    table: "raw_vn_stock_data.vn_market_index"
