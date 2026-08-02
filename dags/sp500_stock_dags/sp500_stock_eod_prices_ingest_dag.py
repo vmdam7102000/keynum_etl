@@ -54,7 +54,13 @@ def _enrich_records(
     return enriched
 
 
-def _sync_one(ticker: str, company_id: int, logical_date: datetime, conn) -> None:
+def _sync_one(
+    ticker: str,
+    company_id: int,
+    logical_date: datetime,
+    conn,
+    provider_ticker: str | None = None,
+) -> None:
     """
     Fetch and insert EOD data for a single ticker within the lookback window.
     """
@@ -66,7 +72,8 @@ def _sync_one(ticker: str, company_id: int, logical_date: datetime, conn) -> Non
     if API_KEY:
         params["api_token"] = API_KEY
 
-    url = API_CFG["url"].format(ticker=ticker)
+    request_ticker = provider_ticker or ticker
+    url = API_CFG["url"].format(ticker=request_ticker)
     payload = request_json(
         url,
         params=params,
@@ -103,7 +110,7 @@ def _sync_one(ticker: str, company_id: int, logical_date: datetime, conn) -> Non
         columns_map=DB_CFG["columns"],
         conflict_keys=DB_CFG["conflict_keys"],
         on_conflict_do_update=True,
-        update_columns=["adjusted_close"],
+        update_columns=["open", "high", "low", "close", "adjusted_close", "volume"],
         conn=conn,
     )
 
@@ -145,10 +152,38 @@ with DAG(
         where_clause = ""
         if DB_CFG.get("only_active", True):
             where_clause = " WHERE is_active = TRUE"
+        membership_table = DB_CFG["membership_table"]
+        mapping_table = DB_CFG["mapping_table"]
         try:
-            cursor.execute(f"SELECT {id_col}, {ticker_col} FROM {table}{where_clause}")
+            cursor.execute(
+                f"""
+                SELECT
+                    company.{id_col},
+                    company.{ticker_col},
+                    COALESCE(provider.provider_ticker, company.{ticker_col})
+                FROM {table} AS company
+                LEFT JOIN LATERAL (
+                    SELECT mapping.provider_ticker
+                    FROM {membership_table} AS membership
+                    JOIN {mapping_table} AS mapping
+                      ON mapping.membership_id = membership.id
+                     AND mapping.provider = 'EODHD'
+                     AND mapping.mapping_status = 'resolved'
+                    WHERE membership.source_ticker = company.{ticker_col}
+                      AND membership.valid_to IS NULL
+                    ORDER BY membership.valid_from DESC
+                    LIMIT 1
+                ) AS provider ON TRUE
+                {where_clause.replace("is_active", "company.is_active")}
+                """
+            )
             companies = [
-                {"company_id": row[0], "ticker": row[1]} for row in cursor.fetchall()
+                {
+                    "company_id": row[0],
+                    "ticker": row[1],
+                    "provider_ticker": row[2],
+                }
+                for row in cursor.fetchall()
             ]
         finally:
             cursor.close()
@@ -172,7 +207,13 @@ with DAG(
                 company_id = company.get("company_id")
                 if not ticker or company_id is None:
                     continue
-                _sync_one(ticker, company_id, logical_date, conn)
+                _sync_one(
+                    ticker,
+                    company_id,
+                    logical_date,
+                    conn,
+                    provider_ticker=company.get("provider_ticker"),
+                )
         finally:
             conn.close()
 

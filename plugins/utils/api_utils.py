@@ -21,6 +21,21 @@ _SENSITIVE_QUERY_VALUE = re.compile(
 )
 
 
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    if not value:
+        return None
+    try:
+        return max(float(value), 0)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max((retry_at - datetime.now(timezone.utc)).total_seconds(), 0)
+
+
 def _redact_sensitive_params(params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Return request parameters that are safe to include in application logs."""
     if params is None:
@@ -131,4 +146,75 @@ def request_json(
             _redact_sensitive_text(last_exc),
         )
 
+    return None
+
+
+def request_text(
+    url: str,
+    *,
+    params: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: int | float = 30,
+    retries: int = 3,
+    backoff: float = 1.5,
+    retry_statuses: Optional[Sequence[int]] = None,
+    fatal_statuses: Optional[Sequence[int]] = None,
+    session: Optional[requests.Session] = None,
+) -> Optional[str]:
+    """Make a GET request and return text using the same retry policy as JSON calls."""
+    http = session or requests.Session()
+    last_exc: Exception | None = None
+    safe_params = _redact_sensitive_params(params)
+    safe_url = _redact_sensitive_text(url)
+
+    for attempt in range(1, retries + 1):
+        try:
+            response = http.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            return response.text
+        except requests.HTTPError as exc:
+            last_exc = exc
+            response = exc.response
+            status_code = response.status_code if response is not None else None
+            if fatal_statuses and status_code in fatal_statuses:
+                raise
+
+            retry_after = None
+            if status_code == 429 or status_code in set(retry_statuses or ()):
+                retry_after = _parse_retry_after(
+                    response.headers.get("Retry-After") if response is not None else None
+                )
+            logging.warning(
+                "Text request failed (%s/%s): GET %s params=%s error=%s",
+                attempt,
+                retries,
+                safe_url,
+                safe_params,
+                _redact_sensitive_text(exc),
+            )
+            if attempt < retries:
+                sleep_time = backoff ** (attempt - 1)
+                if retry_after:
+                    sleep_time = max(sleep_time, retry_after)
+                time.sleep(sleep_time)
+        except Exception as exc:
+            last_exc = exc
+            logging.warning(
+                "Text request failed (%s/%s): GET %s params=%s error=%s",
+                attempt,
+                retries,
+                safe_url,
+                safe_params,
+                _redact_sensitive_text(exc),
+            )
+            if attempt < retries:
+                time.sleep(backoff ** (attempt - 1))
+
+    if last_exc:
+        logging.error("All retries failed for GET %s: %s", safe_url, last_exc)
     return None

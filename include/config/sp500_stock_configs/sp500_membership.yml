@@ -1,0 +1,43 @@
+sp500_membership:
+  schedule: "30 1 * * *"
+
+  source:
+    repository: "fja05680/sp500"
+    path: "sp500_ticker_start_end.csv"
+    commits_url: "https://api.github.com/repos/fja05680/sp500/commits"
+    raw_url_template: "https://raw.githubusercontent.com/fja05680/sp500/{commit_sha}/{path}"
+    github_token_var: "github_token"
+    timeout: 30
+    minimum_rows: 1000
+    maximum_drop_fraction: 0.05
+    quality_warning_before: "2001-01-01"
+
+  wikipedia:
+    url: "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    timeout: 30
+    user_agent: "Keynum-SP500-Airflow/1.0 (automated data pipeline)"
+
+  eodhd:
+    api_key_var: "eodhd_apikey"
+    symbol_list_url: "https://eodhd.com/api/exchange-symbol-list/US"
+    symbol_change_url: "https://eodhd.com/api/symbol-change-history"
+    symbol_change_from: "2022-07-22"
+    timeout: 60
+
+  mapping:
+    manual_overrides: {}
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    company_table: "raw_sp500_stock_data.companies"
+    membership_table: "raw_sp500_stock_data.sp500_membership_history"
+    mapping_table: "raw_sp500_stock_data.sp500_ticker_mappings"
+
+  backfill:
+    dag_id: "backfill_sp500_historical_data_dag"
+    default_batch_size: 50
+    warmup_bars: 252
+    initial_calendar_days: 400
+    extension_calendar_days: 200
+    max_extensions: 10
+    job_throttle_seconds: 1

@@ -13,6 +13,7 @@ from psycopg2.extras import Json
 
 from plugins.utils.api_utils import request_json
 from plugins.utils.config_loader import load_yaml_config
+from plugins.utils.crypto_market_metrics import upsert_daily_market_metric
 
 CONFIG = load_yaml_config("crypto_configs/crypto_market_daily_matrics.yml")[
     "sync_crypto_market_daily_matrics_dag"
@@ -352,89 +353,6 @@ def _build_record(
     }
 
 
-def _replace_daily_metric(conn, table_name: str, record: Dict[str, Any]) -> int:
-    delete_sql = f"""
-        DELETE FROM {table_name}
-        WHERE coin_id = %s
-          AND metric_date = %s
-    """
-    insert_sql = f"""
-        INSERT INTO {table_name} (
-            coin_id,
-            metric_date,
-            snapshot_at,
-            price_usd,
-            market_cap_usd,
-            fdv_usd,
-            volume_24h_usd,
-            price_change_pct_24h,
-            circulating_supply,
-            total_supply,
-            max_supply,
-            exchange_count,
-            best_liquidity_exchange,
-            cost_to_move_up_usd,
-            cost_to_move_down_usd,
-            bid_ask_spread_pct,
-            tvl_usd,
-            fees_24h_usd,
-            revenue_24h_usd,
-            dex_volume_24h_usd,
-            dex_liquidity_usd,
-            active_addresses_1d,
-            tx_count_1d,
-            tx_volume_usd_1d,
-            fees_usd_1d,
-            mc_to_tvl,
-            mc_to_fees_annualized,
-            sources,
-            quality,
-            source_last_synced_at
-        ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-        )
-    """
-    with conn.cursor() as cursor:
-        cursor.execute(delete_sql, (record["coin_id"], record["metric_date"]))
-        cursor.execute(
-            insert_sql,
-            (
-                record["coin_id"],
-                record["metric_date"],
-                record["snapshot_at"],
-                record["price_usd"],
-                record["market_cap_usd"],
-                record["fdv_usd"],
-                record["volume_24h_usd"],
-                record["price_change_pct_24h"],
-                record["circulating_supply"],
-                record["total_supply"],
-                record["max_supply"],
-                record["exchange_count"],
-                record["best_liquidity_exchange"],
-                record["cost_to_move_up_usd"],
-                record["cost_to_move_down_usd"],
-                record["bid_ask_spread_pct"],
-                record["tvl_usd"],
-                record["fees_24h_usd"],
-                record["revenue_24h_usd"],
-                record["dex_volume_24h_usd"],
-                record["dex_liquidity_usd"],
-                record["active_addresses_1d"],
-                record["tx_count_1d"],
-                record["tx_volume_usd_1d"],
-                record["fees_usd_1d"],
-                record["mc_to_tvl"],
-                record["mc_to_fees_annualized"],
-                record["sources"],
-                record["quality"],
-                record["source_last_synced_at"],
-            ),
-        )
-        return cursor.rowcount
-
-
 with DAG(
     dag_id="sync_crypto_market_daily_matrics_dag",
     description="Sync CoinGecko market metrics into cryptocurrency_market_metrics_daily",
@@ -542,7 +460,7 @@ with DAG(
 
                 try:
                     record = _build_record(row, market_payload, ticker_payload)
-                    inserted_rows += _replace_daily_metric(
+                    inserted_rows += upsert_daily_market_metric(
                         conn,
                         DB_CFG["target_table"],
                         record,

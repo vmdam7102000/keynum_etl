@@ -1,7 +1,7 @@
 sp500_fundamentals:
   schedule: "0 4 * * *"
   api:
-    url: "https://eodhd.com/api/fundamentals/{ticker}"
+    url: "https://eodhd.com/api/v1.1/fundamentals/{ticker}"
     api_key_var: "eodhd_apikey"
     timeout: 30
     retries: 3
@@ -16,6 +16,8 @@ sp500_fundamentals:
     company_id_column: "id"
     company_ticker_column: "ticker"
     only_active: true
+    membership_table: "raw_sp500_stock_data.sp500_membership_history"
+    mapping_table: "raw_sp500_stock_data.sp500_ticker_mappings"
 
     snapshot_table: "raw_sp500_stock_data.company_fundamentals_snapshots"
     highlights_table: "raw_sp500_stock_data.company_highlights"
