@@ -1,4 +1,18 @@
 *.pyc
 __pycache__/
 *sample*
+/sentix-romeo/
+kndev_sentix.tsv
+kndev_sentix.csv
+romeo_sp500.xlsx
+
+# Keep the repository's pre-existing local test tree ignored, while allowing
+# the production Sentix acceptance suite and licensed private fixtures.
 tests/
+!tests/
+tests/*
+!tests/test_sentix_*.py
+!tests/fixtures/
+tests/fixtures/*
+!tests/fixtures/sentix/
+!tests/fixtures/sentix/**

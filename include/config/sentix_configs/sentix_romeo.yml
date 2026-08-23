@@ -1,0 +1,34 @@
+sentix_romeo:
+  schedule: "0 20 * * 0"
+  timezone: "Europe/Berlin"
+
+  api:
+    conn_id: "sentix_api"
+    endpoint: "/datadownload/remote_data.php"
+    timeout_seconds: 180
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    observation_table: "raw_sentix_data.sentix_observation"
+    series_table: "raw_sentix_data.sentix_series"
+    load_run_table: "raw_sentix_data.sentix_load_run"
+    signal_definition_table: "raw_sentix_data.signal_definition"
+    signal_observation_table: "raw_sentix_data.signal_observation"
+    signal_run_table: "raw_sentix_data.signal_compute_run"
+    sentix_health_view: "raw_sentix_data.sentix_health"
+    signal_latest_view: "raw_sentix_data.signal_latest"
+    signal_health_view: "raw_sentix_data.signal_health"
+
+  load:
+    backfill_start_date: "2000-01-01"
+    incremental_overlap_days: 21
+    batch_size: 5000
+
+  health:
+    minimum_codes: 700
+    minimum_code_retention_ratio: 0.95
+    stale_after_days: 10
+    unchanged_sentiment_weeks: 3
+
+  alert_email_variable: "sentix_alert_emails"
+
