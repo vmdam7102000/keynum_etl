@@ -1,0 +1,99 @@
+sync_cmc_top30_universe_dag:
+  schedule: "15 1 1 * *"
+  history_years: 3
+  execution_timeout_hours: 2
+
+  api:
+    url: "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/historical"
+    api_key_var: "cmc_api_key"
+    timeout: 60
+    retries: 4
+    backoff: 2
+    throttle_seconds: 0.25
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    run_table: "raw_crypto_data.cmc_top30_universe_runs"
+    snapshot_table: "raw_crypto_data.cmc_top30_universe_snapshot"
+
+  downstream:
+    mapping_dag_id: "sync_cmc_top30_asset_mappings_dag"
+    trigger_mapping: true
+
+sync_cmc_top30_asset_mappings_dag:
+  schedule: "30 7 * * *"
+  execution_timeout_hours: 2
+  default_data_start_at: "2013-01-01T00:00:00Z"
+
+  market:
+    quote: "USDT"
+    venue_priority:
+      - "binance"
+      - "okx"
+      - "bybit"
+      - "kucoin"
+      - "bitget"
+      - "gateio"
+    timeout_ms: 60000
+    # Manual escape hatch keyed by canonical symbol. The mapping DAG applies
+    # an override only after verifying exact spot SYMBOL/USDT on that venue.
+    exchange_overrides: {}
+
+  classification:
+    # Reviewed overrides are keyed by canonical symbol, never by cmc_id.
+    stablecoin_overrides: {}
+    wrapped_overrides: {}
+    # Optional ISO-8601 cutoffs for a reviewed rename correction.
+    data_start_overrides: {}
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    run_table: "raw_crypto_data.cmc_top30_universe_runs"
+    snapshot_table: "raw_crypto_data.cmc_top30_universe_snapshot"
+    symbol_target_table: "raw_crypto_data.cmc_top30_symbol_targets"
+
+  downstream:
+    backfill_dag_id: "backfill_cmc_top30_historical_data_dag"
+    trigger_backfill: true
+
+backfill_cmc_top30_historical_data_dag:
+  # Daily runs repair only missing tails; universe sync also triggers this DAG.
+  schedule: "45 7 * * *"
+  execution_timeout_hours: 24
+
+  api:
+    timeframe: "3m"
+    limit: 1000
+    rate_limit_floor: 0.2
+    pool_name: "ccxt_ohlcv_pool"
+    task_concurrency: 3
+    auto_confirm_candle_limit: 2000000
+
+  db:
+    postgres_conn_id: "keynum-central-pg"
+    symbol_target_table: "raw_crypto_data.cmc_top30_symbol_targets"
+    ohlcv_table: "raw_crypto_data.ohlcv_3m"
+    checkpoint_table: "raw_crypto_data.ohlcv_checkpoint"
+
+  aggregate:
+    - timeframe: "15m"
+      target_table: "raw_crypto_data.ohlcv_15m"
+      bucket_minutes: 15
+    - timeframe: "1h"
+      target_table: "raw_crypto_data.ohlcv_1h"
+      bucket_minutes: 60
+    - timeframe: "2h"
+      target_table: "raw_crypto_data.ohlcv_2h"
+      bucket_minutes: 120
+    - timeframe: "4h"
+      target_table: "raw_crypto_data.ohlcv_4h"
+      bucket_minutes: 240
+    - timeframe: "8h"
+      target_table: "raw_crypto_data.ohlcv_8h"
+      bucket_minutes: 480
+    - timeframe: "1d"
+      target_table: "raw_crypto_data.ohlcv_1d"
+      bucket_minutes: 1440
+    - timeframe: "7d"
+      target_table: "raw_crypto_data.ohlcv_7d"
+      bucket_minutes: 10080

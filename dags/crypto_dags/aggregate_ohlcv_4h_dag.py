@@ -11,6 +11,7 @@ from airflow.operators.python import get_current_context
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from plugins.utils.config_loader import load_yaml_config
+from plugins.utils.ohlcv_aggregate import aggregate_ohlcv_window
 
 CONFIG = load_yaml_config("crypto_configs/ohlcv_4h.yml")["ohlcv_4h"]
 DB_CFG = CONFIG["db"]
@@ -69,71 +70,11 @@ def aggregate_window(
     end_ts_ms: int,
     symbols: Optional[List[str]] = None,
 ) -> int:
-    symbol_filter_sql = ""
-    params: List[Any] = [start_ts_ms, end_ts_ms]
-    if symbols:
-        symbol_filter_sql = f"\n          AND {SOURCE_TABLE}.symbol = ANY(%s)"
-        params.append(symbols)
-
-    sql = f"""
-    WITH base AS (
-        SELECT
-            symbol,
-            exchange,
-            ({SOURCE_TABLE}.timestamp / {BUCKET_MS}) * {BUCKET_MS} AS bucket_ts,
-            {SOURCE_TABLE}.timestamp AS ts,
-            open,
-            high,
-            low,
-            close,
-            volume,
-            ROW_NUMBER() OVER (
-                PARTITION BY symbol, exchange, ({SOURCE_TABLE}.timestamp / {BUCKET_MS})
-                ORDER BY {SOURCE_TABLE}.timestamp ASC
-            ) AS rn_asc,
-            ROW_NUMBER() OVER (
-                PARTITION BY symbol, exchange, ({SOURCE_TABLE}.timestamp / {BUCKET_MS})
-                ORDER BY {SOURCE_TABLE}.timestamp DESC
-            ) AS rn_desc
-        FROM {SOURCE_TABLE}
-        WHERE {SOURCE_TABLE}.timestamp >= %s
-          AND {SOURCE_TABLE}.timestamp < %s
-          {symbol_filter_sql}
-    ),
-    aggregated AS (
-        SELECT
-            symbol,
-            exchange,
-            bucket_ts AS timestamp,
-            MAX(open) FILTER (WHERE rn_asc = 1) AS open,
-            MAX(high) AS high,
-            MIN(low) AS low,
-            MAX(close) FILTER (WHERE rn_desc = 1) AS close,
-            SUM(volume) AS volume,
-            to_timestamp(bucket_ts / 1000)::timestamptz AS datetime
-        FROM base
-        GROUP BY symbol, exchange, bucket_ts
+    return aggregate_ohlcv_window(
+        conn, source_table=SOURCE_TABLE, target_table=TARGET_TABLE,
+        bucket_ms=BUCKET_MS, start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms,
+        conflict_keys=CONFLICT_KEYS, symbols=symbols,
     )
-    INSERT INTO {TARGET_TABLE} (
-        symbol, exchange, timestamp, open, high, low, close, volume, datetime
-    )
-    SELECT
-        symbol, exchange, timestamp, open, high, low, close, volume, datetime
-    FROM aggregated
-    ON CONFLICT ({", ".join(CONFLICT_KEYS)})
-    DO UPDATE SET
-        open = EXCLUDED.open,
-        high = EXCLUDED.high,
-        low = EXCLUDED.low,
-        close = EXCLUDED.close,
-        volume = EXCLUDED.volume,
-        datetime = EXCLUDED.datetime;
-    """
-    with conn.cursor() as cursor:
-        cursor.execute(sql, tuple(params))
-        inserted = cursor.rowcount
-    conn.commit()
-    return inserted
 
 
 with DAG(

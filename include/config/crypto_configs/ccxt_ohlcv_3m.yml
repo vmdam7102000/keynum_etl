@@ -10,6 +10,7 @@ ccxt_ohlcv_3m:
     postgres_conn_id: "keynum-central-pg"
     target_table: "raw_crypto_data.ohlcv_3m"
     metadata_table: "raw_crypto_data.coin_marketcap_top100_info"
+    cmc_top30_symbol_target_table: "raw_crypto_data.cmc_top30_symbol_targets"
     checkpoint_table: "raw_crypto_data.ohlcv_checkpoint"
     symbol_quote: "USDT"     # pair symbol with this quote
 
